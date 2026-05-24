@@ -2360,7 +2360,7 @@ export default function App() {
                           const record = attendanceRecords[date] || {};
                           return (
                             <tr key={date}>
-                              <td style={{ fontWeight: 500 }}>{date.substring(5, 10)}</td>
+                              <td style={{ fontWeight: 500 }}>{date.substring(8, 10)}/{date.substring(5, 7)}</td>
                               {attendanceLaborers.map(lab => {
                                 const status = record[lab] || 'None';
                                 const labelMap = { Present: 'P', 'Half Day': 'H', Absent: 'A', None: '—' };
