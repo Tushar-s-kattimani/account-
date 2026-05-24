@@ -1178,6 +1178,10 @@ body {
     display: none;
   }
 
+  .form-tabs-container button {
+    flex-shrink: 0;
+  }
+
   /* Main content overrides */
   .main-content {
     margin-top: 56px;
