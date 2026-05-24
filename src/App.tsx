@@ -1709,7 +1709,7 @@ export default function App() {
                 ✏️ Customize Account Names
               </button>
             </div>
-            <div className="form-tabs-container" style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '10px' }}>
+            <div className="accounts-selector-grid">
               {['Show All', 'Form 1', 'Form 2', 'Form 3', 'Form 4', 'Salary', 'Shivakumar'].map((f) => {
                 const isActive = activeFormTab === f;
                 const balance = formBalances[f]?.balance || 0;
@@ -1719,7 +1719,6 @@ export default function App() {
                     id={`btn-form-tab-${f.replace(' ', '')}`}
                     className={`btn ${isActive ? 'btn-primary' : 'btn-outline'}`}
                     onClick={() => setActiveFormTab(f)}
-                    style={{ flexGrow: 1, padding: '12px', minWidth: '110px' }}
                   >
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                       <span style={{ fontSize: '14px', fontWeight: 600 }}>{f === 'Show All' ? 'Show All' : (formNames[f] || f)}</span>

@@ -1001,6 +1001,22 @@ body {
   margin-bottom: 12px;
 }
 
+.accounts-selector-grid {
+  display: flex;
+  gap: 10px;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 10px;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+.accounts-selector-grid button {
+  flex-grow: 1;
+  padding: 12px;
+  min-width: 110px;
+  flex-shrink: 0;
+}
+
 @media (max-width: 1100px) {
   .layout-grid-entry, .layout-grid-backup {
     grid-template-columns: 1fr;
@@ -1164,22 +1180,28 @@ body {
     box-shadow: var(--card-shadow);
   }
 
-  /* Form Scrollable Tab Container */
-  .form-tabs-container {
-    display: flex;
+  /* Form Accounts Selector Grid inside a visual separate box */
+  .accounts-selector-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
     gap: 8px;
-    overflow-x: auto;
     width: 100%;
-    padding-bottom: 8px;
-    -webkit-overflow-scrolling: touch;
+    background-color: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    padding: 12px;
+    border-radius: var(--radius-md);
+    margin-bottom: 16px;
+    border-bottom: 1px solid var(--border-color);
   }
 
-  .form-tabs-container::-webkit-scrollbar {
-    display: none;
+  .accounts-selector-grid button {
+    flex-shrink: 1;
+    min-width: unset;
+    padding: 10px;
   }
 
-  .form-tabs-container button {
-    flex-shrink: 0;
+  .accounts-selector-grid button:first-child {
+    grid-column: span 2;
   }
 
   /* Main content overrides */
