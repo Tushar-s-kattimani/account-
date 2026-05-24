@@ -651,14 +651,10 @@ export default function App() {
       
       if (nextCategory === 'Salary') {
         nextFormNumber = 'Salary';
-      } else if (prev.formNumber === 'Salary') {
-        nextFormNumber = 'Form 1';
       }
       
       if (lowerVal.includes('shivakumar') || lowerVal.includes('shiva')) {
         nextFormNumber = 'Shivakumar';
-      } else if (prev.formNumber === 'Shivakumar') {
-        nextFormNumber = 'Form 1';
       }
 
       return {
