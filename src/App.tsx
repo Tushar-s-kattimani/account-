@@ -906,8 +906,27 @@ export default function App() {
   return (
     <div className={`app-container ${darkMode ? 'dark-theme' : 'light-theme'}`}>
       
+      {/* --- Mobile Header Bar --- */}
+      <header className="mobile-header mobile-only">
+        <div className="mobile-header-left">
+          <img 
+            src="/DSC_2899.JPG" 
+            alt="Logo" 
+            className="mobile-header-logo" 
+          />
+          <span className="mobile-header-title">Shivakumar's Farm</span>
+        </div>
+        <button 
+          className="mobile-theme-toggle"
+          onClick={() => setDarkMode(!darkMode)}
+          title="Toggle dark/light theme"
+        >
+          {darkMode ? <Sun size={20} /> : <Moon size={20} />}
+        </button>
+      </header>
+
       {/* --- Sidebar Navigation --- */}
-      <aside className="sidebar">
+      <aside className="sidebar desktop-only">
         <div>
           <div className="logo-container" style={{ flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '8px' }}>
             <img 
@@ -1317,7 +1336,7 @@ export default function App() {
 
         {/* --- Tab 2: New Transaction (Single Entry Page) --- */}
         {activeTab === 'new-entry' && (
-          <div className="layout-grid" style={{ gridTemplateColumns: '3fr 2fr' }}>
+          <div className="layout-grid layout-grid-entry">
             <div className="panel">
               <div className="panel-header">
                 <span className="panel-title">New Entry Voucher</span>
@@ -1484,7 +1503,7 @@ export default function App() {
             </div>
 
             {/* Smart Detection Info Panel */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            <div className="desktop-only" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
               <div className="panel" style={{ backgroundColor: 'var(--primary-light)', borderColor: 'var(--primary-border)' }}>
                 <span className="panel-title" style={{ color: 'var(--primary)', borderBottom: 'none', padding: '0', marginBottom: '8px' }}>
                   <Info size={18} /> Auto-Separation Rule
@@ -1547,7 +1566,7 @@ export default function App() {
                 ✏️ Customize Account Names
               </button>
             </div>
-            <div style={{ display: 'flex', gap: '10px', borderBottom: '1px solid var(--border-color)', paddingBottom: '10px', flexWrap: 'wrap' }}>
+            <div className="form-tabs-container" style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '10px' }}>
               {['Show All', 'Form 1', 'Form 2', 'Form 3', 'Form 4', 'Salary', 'Shivakumar'].map((f) => {
                 const isActive = activeFormTab === f;
                 const balance = formBalances[f]?.balance || 0;
@@ -2066,6 +2085,22 @@ export default function App() {
         {/* --- Tab 5: Advanced Reports --- */}
         {activeTab === 'reports' && (
           <>
+            {/* Mobile Sub Navigation Jump Bar */}
+            <div className="mobile-only mobile-subnav">
+              <button 
+                className="mobile-subnav-btn active"
+                onClick={() => setActiveTab('reports')}
+              >
+                Reports & Export
+              </button>
+              <button 
+                className="mobile-subnav-btn"
+                onClick={() => setActiveTab('backup')}
+              >
+                Sync & Backup
+              </button>
+            </div>
+
             {/* Report Parameter Panel */}
             <div className="panel">
               <div className="panel-header">
@@ -2292,7 +2327,24 @@ export default function App() {
 
         {/* --- Tab 6: Backup & Cloud Sync --- */}
         {activeTab === 'backup' && (
-          <div className="layout-grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
+          <>
+            {/* Mobile Sub Navigation Jump Bar */}
+            <div className="mobile-only mobile-subnav">
+              <button 
+                className="mobile-subnav-btn"
+                onClick={() => setActiveTab('reports')}
+              >
+                Reports & Export
+              </button>
+              <button 
+                className="mobile-subnav-btn active"
+                onClick={() => setActiveTab('backup')}
+              >
+                Sync & Backup
+              </button>
+            </div>
+
+            <div className="layout-grid layout-grid-backup">
             
             {/* Cloud Sync simulated panel */}
             <div className="panel">
@@ -2407,7 +2459,8 @@ export default function App() {
             </div>
 
           </div>
-        )}
+        </>
+      )}
 
       </main>
 
@@ -2657,6 +2710,49 @@ export default function App() {
           </div>
         ))}
       </div>
+
+      {/* --- Mobile Bottom Navigation --- */}
+      <nav className="mobile-nav mobile-only">
+        <button 
+          className={`mobile-nav-item ${activeTab === 'dashboard' ? 'active' : ''}`}
+          onClick={() => setActiveTab('dashboard')}
+        >
+          <LayoutDashboard size={20} />
+          <span>Dashboard</span>
+        </button>
+
+        <button 
+          className={`mobile-nav-item ${activeTab === 'new-entry' ? 'active' : ''}`}
+          onClick={() => setActiveTab('new-entry')}
+        >
+          <PlusCircle size={20} />
+          <span>New Entry</span>
+        </button>
+
+        <button 
+          className={`mobile-nav-item ${activeTab === 'form-pages' ? 'active' : ''}`}
+          onClick={() => setActiveTab('form-pages')}
+        >
+          <BookOpen size={20} />
+          <span>Accounts</span>
+        </button>
+
+        <button 
+          className={`mobile-nav-item ${activeTab === 'attendance' ? 'active' : ''}`}
+          onClick={() => setActiveTab('attendance')}
+        >
+          <Users size={20} />
+          <span>Attendance</span>
+        </button>
+
+        <button 
+          className={`mobile-nav-item ${(activeTab === 'reports' || activeTab === 'backup') ? 'active' : ''}`}
+          onClick={() => setActiveTab(activeTab === 'backup' ? 'backup' : 'reports')}
+        >
+          <BarChart3 size={20} />
+          <span>Reports & Sync</span>
+        </button>
+      </nav>
 
     </div>
   );
