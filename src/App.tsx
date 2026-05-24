@@ -130,6 +130,24 @@ const extractPersonFromReason = (reason: string, category: string): string => {
   return '—';
 };
 
+const formatDateToDisplay = (dateStr: string): string => {
+  if (!dateStr) return '—';
+  const parts = dateStr.split('-');
+  if (parts.length === 3) {
+    return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  }
+  return dateStr;
+};
+
+const formatMonthToDisplay = (monthStr: string): string => {
+  if (!monthStr) return '—';
+  const parts = monthStr.split('-');
+  if (parts.length === 2) {
+    return `${parts[1]}/${parts[0]}`;
+  }
+  return monthStr;
+};
+
 // Initial Demo Data
 const demoTransactions: Transaction[] = [
   {
@@ -1409,7 +1427,7 @@ export default function App() {
                     <tbody>
                       {transactions.slice(0, 5).map((t) => (
                         <tr key={t.id}>
-                          <td>{t.date}</td>
+                          <td>{formatDateToDisplay(t.date)}</td>
                           <td>
                             <span className="badge badge-form">{formNames[t.formNumber] || t.formNumber}</span>
                           </td>
@@ -1880,7 +1898,7 @@ export default function App() {
                                 <span className="badge badge-form">{formNames[t.formNumber] || t.formNumber}</span>
                               </td>
                             )}
-                            <td>{t.date}</td>
+                            <td>{formatDateToDisplay(t.date)}</td>
                             <td>
                               <span className="badge badge-category">{t.category}</span>
                             </td>
@@ -2082,7 +2100,7 @@ export default function App() {
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                             <span className="badge badge-category" style={{ fontSize: '11px' }}>
                               <Calendar size={11} style={{ marginRight: '4px' }} />
-                              {note.date}
+                               {formatDateToDisplay(note.date)}
                             </span>
                             <div style={{ display: 'flex', gap: '6px' }}>
                               <button 
@@ -2603,9 +2621,9 @@ export default function App() {
             <div className="panel" id="printable-report-area">
               <div style={{ display: 'none', flexDirection: 'column', gap: '8px', marginBottom: '20px' }} className="print-only">
                 <h2 style={{ fontFamily: 'var(--font-heading)' }}>Shivakumar's Farm Account Book Report</h2>
-                <p>Generated on {todayStr} | Target Scope: {reportType.toUpperCase()} ({
-                  reportType === 'daily' ? reportDate : 
-                  reportType === 'monthly' ? reportMonth : 
+                <p>Generated on {formatDateToDisplay(todayStr)} | Target Scope: {reportType.toUpperCase()} ({
+                  reportType === 'daily' ? formatDateToDisplay(reportDate) : 
+                  reportType === 'monthly' ? formatMonthToDisplay(reportMonth) : 
                   (formNames[reportForm] || reportForm)
                 })</p>
                 <div style={{ display: 'flex', gap: '20px', marginTop: '10px' }}>
@@ -2645,7 +2663,7 @@ export default function App() {
                     <tbody>
                       {reportTransactions.map((t) => (
                         <tr key={t.id}>
-                          <td>{t.date}</td>
+                          <td>{formatDateToDisplay(t.date)}</td>
                           <td>
                             <span className="badge badge-form">{formNames[t.formNumber] || t.formNumber}</span>
                           </td>
