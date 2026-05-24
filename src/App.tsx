@@ -1554,7 +1554,7 @@ export default function App() {
         {activeTab === 'form-pages' && (
           <>
             {/* Form Selector Sub-Tabs */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+            <div className="accounts-header">
               <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-secondary)' }}>Select Account Ledger:</span>
               <button 
                 className="btn btn-outline btn-sm"
