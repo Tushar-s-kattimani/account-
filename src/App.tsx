@@ -39,6 +39,14 @@ interface Transaction {
   createdAt: string;
 }
 
+interface Note {
+  id: string;
+  date: string;
+  title: string;
+  content: string;
+  createdAt: string;
+}
+
 
 
 // Heuristic name parsing helpers for description field
@@ -349,6 +357,114 @@ export default function App() {
     });
     setMarkStatus(initial);
   }, [attendanceDate, attendanceRecords, attendanceLaborers]);
+
+  // --- Daily Notes State ---
+  const [notes, setNotes] = useState<Note[]>(() => {
+    const saved = localStorage.getItem('farm2_notes');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.error("Error parsing notes, loading empty list", e);
+      }
+    }
+    return [];
+  });
+
+  const [noteFormData, setNoteFormData] = useState({
+    date: todayStr,
+    title: '',
+    content: ''
+  });
+  const [editingNote, setEditingNote] = useState<Note | null>(null);
+  const [noteSearchQuery, setNoteSearchQuery] = useState('');
+  const [noteDateFilter, setNoteDateFilter] = useState('');
+
+  useEffect(() => {
+    localStorage.setItem('farm2_notes', JSON.stringify(notes));
+  }, [notes]);
+
+  // Save Note (Add or Update)
+  const handleSaveNote = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!noteFormData.title.trim()) {
+      showToast("Missing Field", "Please enter a title for the note.", "error");
+      return;
+    }
+    if (!noteFormData.content.trim()) {
+      showToast("Missing Field", "Please enter some content for the note.", "error");
+      return;
+    }
+
+    if (editingNote) {
+      setNotes(prev => prev.map(n => n.id === editingNote.id ? {
+        ...n,
+        date: noteFormData.date,
+        title: noteFormData.title.trim(),
+        content: noteFormData.content.trim()
+      } : n));
+      showToast("Note Updated", "The note has been successfully modified.", "success");
+      setEditingNote(null);
+    } else {
+      const newNote: Note = {
+        id: 'note-' + Date.now(),
+        date: noteFormData.date,
+        title: noteFormData.title.trim(),
+        content: noteFormData.content.trim(),
+        createdAt: new Date().toISOString()
+      };
+      setNotes(prev => [newNote, ...prev]);
+      showToast("Note Saved", "Daily note recorded successfully.", "success");
+    }
+
+    setNoteFormData({
+      date: todayStr,
+      title: '',
+      content: ''
+    });
+
+    triggerCloudSync();
+  };
+
+  // Delete Note
+  const handleDeleteNote = (id: string) => {
+    if (confirm("Are you sure you want to delete this note?")) {
+      setNotes(prev => prev.filter(n => n.id !== id));
+      showToast("Note Deleted", "The note has been removed.", "success");
+      triggerCloudSync();
+    }
+  };
+
+  // Start Editing Note
+  const handleEditNoteStart = (note: Note) => {
+    setEditingNote(note);
+    setNoteFormData({
+      date: note.date,
+      title: note.title,
+      content: note.content
+    });
+  };
+
+  // Cancel Editing Note
+  const handleCancelEditNote = () => {
+    setEditingNote(null);
+    setNoteFormData({
+      date: todayStr,
+      title: '',
+      content: ''
+    });
+  };
+
+  // Filter Notes
+  const filteredNotes = useMemo(() => {
+    return notes.filter(n => {
+      const matchesSearch = noteSearchQuery === '' ||
+        n.title.toLowerCase().includes(noteSearchQuery.toLowerCase()) ||
+        n.content.toLowerCase().includes(noteSearchQuery.toLowerCase());
+      const matchesDate = noteDateFilter === '' || n.date === noteDateFilter;
+      return matchesSearch && matchesDate;
+    }).sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
+  }, [notes, noteSearchQuery, noteDateFilter]);
 
   // Attendance Calculations
   const datesInSelectedMonth = useMemo(() => {
@@ -974,6 +1090,15 @@ export default function App() {
             </button>
 
             <button 
+              id="nav-notes"
+              className={`nav-item ${activeTab === 'notes' ? 'active' : ''}`}
+              onClick={() => setActiveTab('notes')}
+            >
+              <FileText size={18} />
+              <span>Daily Notes</span>
+            </button>
+
+            <button 
               id="nav-attendance"
               className={`nav-item ${activeTab === 'attendance' ? 'active' : ''}`}
               onClick={() => setActiveTab('attendance')}
@@ -1047,6 +1172,7 @@ export default function App() {
               {activeTab === 'dashboard' && 'Financial Dashboard'}
               {activeTab === 'new-entry' && 'Add Daily Transaction'}
               {activeTab === 'form-pages' && (activeFormTab === 'Show All' ? 'All Forms Account Ledger' : `${activeFormTab} Account Ledger`)}
+              {activeTab === 'notes' && 'Daily Farm Notes Journal'}
               {activeTab === 'attendance' && 'Laborers Attendance Register'}
               {activeTab === 'reports' && 'Generate Account Reports'}
               {activeTab === 'backup' && 'Cloud Sync & Local Backup'}
@@ -1055,6 +1181,7 @@ export default function App() {
               {activeTab === 'dashboard' && 'Aggregated metrics and multi-form statistics for today'}
               {activeTab === 'new-entry' && 'Post a debit or credit entry; it automatically logs into the respective form'}
               {activeTab === 'form-pages' && 'Detailed ledger entries and summaries segregated by form numbers'}
+              {activeTab === 'notes' && 'Record and review daily text logs, weather conditions, or crop descriptions'}
               {activeTab === 'attendance' && 'Track daily attendance, present days, half days, and absences for workers'}
               {activeTab === 'reports' && 'Generate CSV sheets, review summaries, or print out clean PDF report files'}
               {activeTab === 'backup' && 'Maintain local backups, upload saved profiles, or force cloud sync'}
@@ -1553,6 +1680,22 @@ export default function App() {
         {/* --- Tab 3: Form Pages (Auto Segregated) --- */}
         {activeTab === 'form-pages' && (
           <>
+            {/* Mobile Sub Navigation Jump Bar */}
+            <div className="mobile-only mobile-subnav">
+              <button 
+                className="mobile-subnav-btn active"
+                onClick={() => setActiveTab('form-pages')}
+              >
+                Account Ledgers
+              </button>
+              <button 
+                className="mobile-subnav-btn"
+                onClick={() => setActiveTab('notes')}
+              >
+                Daily Notes
+              </button>
+            </div>
+
             {/* Form Selector Sub-Tabs */}
             <div className="accounts-header">
               <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-secondary)' }}>Select Account Ledger:</span>
@@ -1770,6 +1913,208 @@ export default function App() {
                   </table>
                 </div>
               )}
+            </div>
+          </>
+        )}
+
+        {/* --- Tab: Daily Notes --- */}
+        {activeTab === 'notes' && (
+          <>
+            {/* Mobile Sub Navigation Jump Bar */}
+            <div className="mobile-only mobile-subnav">
+              <button 
+                className="mobile-subnav-btn"
+                onClick={() => setActiveTab('form-pages')}
+              >
+                Account Ledgers
+              </button>
+              <button 
+                className="mobile-subnav-btn active"
+                onClick={() => setActiveTab('notes')}
+              >
+                Daily Notes
+              </button>
+            </div>
+
+            <div className="layout-grid layout-grid-entry">
+              
+              {/* Left Column: Add/Edit Daily Note */}
+              <div className="panel">
+                <div className="panel-header">
+                  <span className="panel-title">
+                    <FileText size={20} /> {editingNote ? 'Modify Daily Note' : 'Create Daily Note'}
+                  </span>
+                  {editingNote && (
+                    <button 
+                      type="button" 
+                      className="btn btn-secondary btn-sm"
+                      onClick={handleCancelEditNote}
+                    >
+                      Cancel Edit
+                    </button>
+                  )}
+                </div>
+
+                <form onSubmit={handleSaveNote} className="transaction-form" style={{ gridTemplateColumns: '1fr' }}>
+                  {/* Date Selection */}
+                  <div className="form-group">
+                    <label className="form-label">
+                      <Calendar size={14} /> Note Date
+                    </label>
+                    <input 
+                      type="date" 
+                      className="form-input"
+                      value={noteFormData.date}
+                      onChange={(e) => setNoteFormData(prev => ({ ...prev, date: e.target.value }))}
+                      required
+                    />
+                  </div>
+
+                  {/* Title */}
+                  <div className="form-group">
+                    <label className="form-label">Title / Topic</label>
+                    <input 
+                      type="text" 
+                      className="form-input"
+                      placeholder="e.g. Tomato crop harvest details"
+                      value={noteFormData.title}
+                      onChange={(e) => setNoteFormData(prev => ({ ...prev, title: e.target.value }))}
+                      required
+                    />
+                  </div>
+
+                  {/* Content Textarea */}
+                  <div className="form-group">
+                    <label className="form-label">Write Note Content</label>
+                    <textarea 
+                      className="form-textarea"
+                      placeholder="Write notes about seeds, weather, workers wages or general remarks for this day..."
+                      value={noteFormData.content}
+                      onChange={(e) => setNoteFormData(prev => ({ ...prev, content: e.target.value }))}
+                      required
+                      rows={8}
+                      style={{ minHeight: '160px' }}
+                    />
+                  </div>
+
+                  <button 
+                    type="submit" 
+                    className="btn btn-primary btn-block"
+                    style={{ marginTop: '8px' }}
+                  >
+                    <Check size={16} /> {editingNote ? 'Save Changes' : 'Save Daily Note'}
+                  </button>
+                </form>
+              </div>
+
+              {/* Right Column: Search and Filter Notes List */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                
+                {/* Search & Date Filter Card */}
+                <div className="panel" style={{ padding: '16px' }}>
+                  <div className="filters-row">
+                    <div className="search-input-wrapper">
+                      <Search />
+                      <input 
+                        type="text" 
+                        className="form-input" 
+                        placeholder="Search keywords in title/content..."
+                        value={noteSearchQuery}
+                        onChange={(e) => setNoteSearchQuery(e.target.value)}
+                      />
+                    </div>
+                    
+                    <input 
+                      type="date" 
+                      className="form-input" 
+                      style={{ width: '150px' }}
+                      value={noteDateFilter}
+                      onChange={(e) => setNoteDateFilter(e.target.value)}
+                    />
+
+                    {(noteSearchQuery || noteDateFilter) && (
+                      <button 
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => {
+                          setNoteSearchQuery('');
+                          setNoteDateFilter('');
+                        }}
+                      >
+                        Clear Filters
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Notes List Panel */}
+                <div className="panel" style={{ flexGrow: 1 }}>
+                  <div className="panel-header">
+                    <span className="panel-title">Notes History Logs</span>
+                    <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+                      Total {filteredNotes.length} notes found
+                    </span>
+                  </div>
+
+                  {filteredNotes.length === 0 ? (
+                    <div className="empty-state">
+                      <FileText className="empty-state-icon" />
+                      <h3>No Notes Found</h3>
+                      <p>Start recording daily logs or clear active search filters.</p>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxHeight: '550px', overflowY: 'auto', paddingRight: '4px' }}>
+                      {filteredNotes.map((note) => (
+                        <div 
+                          key={note.id}
+                          style={{
+                            padding: '16px',
+                            border: '1px solid var(--border-color)',
+                            borderRadius: 'var(--radius-md)',
+                            backgroundColor: 'var(--bg-primary)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '10px',
+                            position: 'relative'
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                            <span className="badge badge-category" style={{ fontSize: '11px' }}>
+                              <Calendar size={11} style={{ marginRight: '4px' }} />
+                              {note.date}
+                            </span>
+                            <div style={{ display: 'flex', gap: '6px' }}>
+                              <button 
+                                className="btn btn-outline btn-sm"
+                                style={{ padding: '2px 6px', fontSize: '11px' }}
+                                onClick={() => handleEditNoteStart(note)}
+                              >
+                                Edit
+                              </button>
+                              <button 
+                                className="btn btn-danger btn-sm"
+                                style={{ padding: '2px 6px', fontSize: '11px' }}
+                                onClick={() => handleDeleteNote(note.id)}
+                              >
+                                <Trash2 size={11} />
+                              </button>
+                            </div>
+                          </div>
+
+                          <h3 style={{ fontSize: '15px', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
+                            {note.title}
+                          </h3>
+
+                          <p style={{ fontSize: '13px', color: 'var(--text-secondary)', whiteSpace: 'pre-wrap', margin: 0, lineHeight: '1.5' }}>
+                            {note.content}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+              </div>
+
             </div>
           </>
         )}
@@ -2730,11 +3075,11 @@ export default function App() {
         </button>
 
         <button 
-          className={`mobile-nav-item ${activeTab === 'form-pages' ? 'active' : ''}`}
-          onClick={() => setActiveTab('form-pages')}
+          className={`mobile-nav-item ${(activeTab === 'form-pages' || activeTab === 'notes') ? 'active' : ''}`}
+          onClick={() => setActiveTab(activeTab === 'notes' ? 'notes' : 'form-pages')}
         >
           <BookOpen size={20} />
-          <span>Accounts</span>
+          <span>Accounts & Notes</span>
         </button>
 
         <button 
