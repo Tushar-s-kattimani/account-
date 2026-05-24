@@ -304,6 +304,13 @@ export default function App() {
     notes: ''
   });
 
+  // Synchronize form selection with the active accounts page tab
+  useEffect(() => {
+    if (activeFormTab !== 'Show All') {
+      setFormData(prev => ({ ...prev, formNumber: activeFormTab }));
+    }
+  }, [activeFormTab]);
+
   // --- UI Toast & Popups ---
   const [toasts, setToasts] = useState<{id: string, title: string, message: string, type: 'success' | 'error' | 'info'}[]>([]);
   const [syncState, setSyncState] = useState<'idle' | 'syncing' | 'synced'>('synced');
