@@ -335,17 +335,6 @@ export default function App() {
   // --- Firebase & Sync States ---
   const [isFirebaseConnected, setIsFirebaseConnected] = useState<boolean>(dbService.isFirebaseActive());
   const [isMigrating, setIsMigrating] = useState<boolean>(false);
-  const [firebaseConfigForm, setFirebaseConfigForm] = useState<dbService.FirebaseConfig>(() => {
-    const config = dbService.getFirebaseConfig();
-    return config || {
-      apiKey: '',
-      authDomain: '',
-      projectId: '',
-      storageBucket: '',
-      messagingSenderId: '',
-      appId: ''
-    };
-  });
 
   // Setup Firestore Subscriptions
   useEffect(() => {
@@ -392,29 +381,6 @@ export default function App() {
     };
   }, []);
 
-
-  const handleSaveFirebaseConfig = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!firebaseConfigForm.apiKey || !firebaseConfigForm.projectId) {
-      showToast("Config Error", "API Key and Project ID are required.", "error");
-      return;
-    }
-    dbService.saveFirebaseConfig(firebaseConfigForm);
-    showToast("Config Saved", "Reloading application to connect to Firestore...", "success");
-    setTimeout(() => {
-      window.location.reload();
-    }, 1500);
-  };
-
-  const handleClearFirebaseConfig = () => {
-    if (confirm("Are you sure you want to disconnect Firestore? The app will revert to Local Storage.")) {
-      dbService.clearFirebaseConfig();
-      showToast("Config Cleared", "Reloading application to disconnect...", "info");
-      setTimeout(() => {
-        window.location.reload();
-      }, 1500);
-    }
-  };
 
   const handleMigrateData = async () => {
     if (!dbService.isFirebaseActive()) {
@@ -3162,91 +3128,13 @@ export default function App() {
                   </div>
                 ) : (
                   <div style={{ padding: '12px', backgroundColor: 'rgba(245, 158, 11, 0.08)', border: '1px dashed #f59e0b', borderRadius: '8px', fontSize: '13px', color: '#d97706' }}>
-                    <strong>Note:</strong> Connect to Firestore to enable real-time cloud sync and backup. See the settings form on this page to configure.
+                    <strong>Note:</strong> Connect to Firestore to enable real-time cloud sync and backup. Make sure your <code>.env</code> file is configured and you have restarted the dev server.
                   </div>
                 )}
               </div>
             </div>
 
 
-
-            {/* Firebase Configuration Panel */}
-            <div className="panel">
-              <div className="panel-header">
-                <span className="panel-title">
-                  <Database size={20} /> Firestore Connection Settings
-                </span>
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <p style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>
-                  Configure your Firebase project credentials to sync data with Firestore. These can be configured in a <code>.env</code> file or pasted below.
-                </p>
-
-                <form onSubmit={handleSaveFirebaseConfig} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>Project ID *</label>
-                    <input 
-                      type="text" 
-                      className="form-control"
-                      value={firebaseConfigForm.projectId}
-                      onChange={(e) => setFirebaseConfigForm({ ...firebaseConfigForm, projectId: e.target.value })}
-                      placeholder="e.g. farm-ledger-1234"
-                      required
-                    />
-                  </div>
-                  <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>API Key *</label>
-                    <input 
-                      type="password" 
-                      className="form-control"
-                      value={firebaseConfigForm.apiKey}
-                      onChange={(e) => setFirebaseConfigForm({ ...firebaseConfigForm, apiKey: e.target.value })}
-                      placeholder="AIzaSy..."
-                      required
-                    />
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                    <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                      <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>Auth Domain</label>
-                      <input 
-                        type="text" 
-                        className="form-control"
-                        value={firebaseConfigForm.authDomain}
-                        onChange={(e) => setFirebaseConfigForm({ ...firebaseConfigForm, authDomain: e.target.value })}
-                        placeholder="project.firebaseapp.com"
-                      />
-                    </div>
-                    <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                      <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>App ID</label>
-                      <input 
-                        type="text" 
-                        className="form-control"
-                        value={firebaseConfigForm.appId}
-                        onChange={(e) => setFirebaseConfigForm({ ...firebaseConfigForm, appId: e.target.value })}
-                        placeholder="1:1234:web:abcd"
-                      />
-                    </div>
-                  </div>
-                  
-                  <div style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
-                    <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>
-                      Save & Connect Firestore
-                    </button>
-                    {isFirebaseConnected && (
-                      <button 
-                        type="button" 
-                        className="btn btn-outline" 
-                        onClick={handleClearFirebaseConfig}
-                        style={{ borderColor: 'var(--debit)', color: 'var(--debit)' }}
-                      >
-                        Disconnect
-                      </button>
-                    )}
-                  </div>
-                </form>
-              </div>
-            </div>
 
             {/* Local Backup Panel */}
             <div className="panel">
