@@ -3128,7 +3128,7 @@ export default function App() {
                   </div>
                 ) : (
                   <div style={{ padding: '12px', backgroundColor: 'rgba(245, 158, 11, 0.08)', border: '1px dashed #f59e0b', borderRadius: '8px', fontSize: '13px', color: '#d97706' }}>
-                    <strong>Note:</strong> Connect to Firestore to enable real-time cloud sync and backup. See the settings form on this page to configure.
+                    <strong>Note:</strong> Connect to Firestore to enable real-time cloud sync and backup. Make sure your <code>.env</code> file is configured and you have restarted the dev server.
                   </div>
                 )}
               </div>
