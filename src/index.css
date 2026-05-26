@@ -1331,7 +1331,7 @@ body {
     color: #000000 !important;
     font-size: 12px;
   }
-  .sidebar, .header-actions, .filters-row, .btn, .theme-toggle-btn, .cloud-sync-bar, .toast-container, .modal-overlay {
+  .sidebar, .header-actions, .filters-row, .btn, .theme-toggle-btn, .cloud-sync-bar, .toast-container, .modal-overlay, .no-print, .accounts-selector-grid, .accounts-header {
     display: none !important;
   }
   .main-content {
@@ -1363,4 +1363,12 @@ body {
     grid-template-columns: repeat(4, 1fr) !important;
     gap: 12px !important;
   }
+}
+
+/* PDF Exporting Styles */
+body.pdf-exporting .no-print,
+body.pdf-exporting .btn,
+body.pdf-exporting td.no-print,
+body.pdf-exporting th.no-print {
+  display: none !important;
 }

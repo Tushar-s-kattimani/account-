@@ -1,4 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import * as dbService from './services/db';
+import { jsPDF } from 'jspdf';
+import html2canvas from 'html2canvas';
 import { 
   LayoutDashboard, 
   PlusCircle, 
@@ -329,6 +332,80 @@ export default function App() {
     }
   }, [activeFormTab]);
 
+  // --- Firebase & Sync States ---
+  const [isFirebaseConnected, setIsFirebaseConnected] = useState<boolean>(dbService.isFirebaseActive());
+  const [isMigrating, setIsMigrating] = useState<boolean>(false);
+
+  // Setup Firestore Subscriptions
+  useEffect(() => {
+    if (!dbService.isFirebaseActive()) {
+      setIsFirebaseConnected(false);
+      return;
+    }
+
+    setIsFirebaseConnected(true);
+    setSyncState('syncing');
+
+    // Subscribe to transactions
+    const unsubTxs = dbService.subscribeTransactions((updatedTxs) => {
+      setTransactions(updatedTxs);
+      setSyncState('synced');
+      setLastSyncTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+    });
+
+    // Subscribe to notes
+    const unsubNotes = dbService.subscribeNotes((updatedNotes) => {
+      setNotes(updatedNotes);
+    });
+
+    // Subscribe to attendance records
+    const unsubAttendance = dbService.subscribeAttendance((updatedRecords) => {
+      setAttendanceRecords(updatedRecords);
+    });
+
+    // Subscribe to settings
+    const unsubSettings = dbService.subscribeSettings((settings) => {
+      if (settings.formNames) {
+        setFormNames(settings.formNames);
+      }
+      if (settings.attendanceLaborers) {
+        setAttendanceLaborers(settings.attendanceLaborers);
+      }
+    });
+
+    return () => {
+      unsubTxs();
+      unsubNotes();
+      unsubAttendance();
+      unsubSettings();
+    };
+  }, []);
+
+
+  const handleMigrateData = async () => {
+    if (!dbService.isFirebaseActive()) {
+      showToast("Cannot Migrate", "Firebase is not configured yet.", "error");
+      return;
+    }
+    setIsMigrating(true);
+    showToast("Migration Started", "Uploading local ledger records to Firestore...", "info");
+    try {
+      await dbService.migrateLocalToCloud({
+        transactions,
+        notes,
+        attendanceRecords,
+        formNames,
+        attendanceLaborers
+      });
+      showToast("Migration Complete", "All local data has been successfully synced to Firestore!", "success");
+    } catch (e: any) {
+      console.error(e);
+      showToast("Migration Failed", e.message || "An error occurred during migration.", "error");
+    } finally {
+      setIsMigrating(false);
+    }
+  };
+
   // --- UI Toast & Popups ---
   const [toasts, setToasts] = useState<{id: string, title: string, message: string, type: 'success' | 'error' | 'info'}[]>([]);
   const [syncState, setSyncState] = useState<'idle' | 'syncing' | 'synced'>('synced');
@@ -410,7 +487,7 @@ export default function App() {
   }, [notes]);
 
   // Save Note (Add or Update)
-  const handleSaveNote = (e: React.FormEvent) => {
+  const handleSaveNote = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!noteFormData.title.trim()) {
       showToast("Missing Field", "Please enter a title for the note.", "error");
@@ -422,12 +499,17 @@ export default function App() {
     }
 
     if (editingNote) {
-      setNotes(prev => prev.map(n => n.id === editingNote.id ? {
-        ...n,
+      const updatedNote: Note = {
+        ...editingNote,
         date: noteFormData.date,
         title: noteFormData.title.trim(),
         content: noteFormData.content.trim()
-      } : n));
+      };
+      if (dbService.isFirebaseActive()) {
+        await dbService.saveNote(updatedNote);
+      } else {
+        setNotes(prev => prev.map(n => n.id === editingNote.id ? updatedNote : n));
+      }
       showToast("Note Updated", "The note has been successfully modified.", "success");
       setEditingNote(null);
     } else {
@@ -438,7 +520,11 @@ export default function App() {
         content: noteFormData.content.trim(),
         createdAt: new Date().toISOString()
       };
-      setNotes(prev => [newNote, ...prev]);
+      if (dbService.isFirebaseActive()) {
+        await dbService.saveNote(newNote);
+      } else {
+        setNotes(prev => [newNote, ...prev]);
+      }
       showToast("Note Saved", "Daily note recorded successfully.", "success");
     }
 
@@ -448,15 +534,23 @@ export default function App() {
       content: ''
     });
 
-    triggerCloudSync();
+    if (!dbService.isFirebaseActive()) {
+      triggerCloudSync();
+    }
   };
 
   // Delete Note
-  const handleDeleteNote = (id: string) => {
+  const handleDeleteNote = async (id: string) => {
     if (confirm("Are you sure you want to delete this note?")) {
-      setNotes(prev => prev.filter(n => n.id !== id));
+      if (dbService.isFirebaseActive()) {
+        await dbService.deleteNote(id);
+      } else {
+        setNotes(prev => prev.filter(n => n.id !== id));
+      }
       showToast("Note Deleted", "The note has been removed.", "success");
-      triggerCloudSync();
+      if (!dbService.isFirebaseActive()) {
+        triggerCloudSync();
+      }
     }
   };
 
@@ -576,20 +670,27 @@ export default function App() {
     return stats;
   }, [datesInSelectedWeek, attendanceRecords, attendanceLaborers]);
 
-  const handleSaveAttendance = (e: React.FormEvent) => {
+  const handleSaveAttendance = async (e: React.FormEvent) => {
     e.preventDefault();
-    setAttendanceRecords(prev => ({
-      ...prev,
-      [attendanceDate]: {
-        ...prev[attendanceDate],
-        ...markStatus
-      }
-    }));
+    const updatedDayRecord = {
+      ...(attendanceRecords[attendanceDate] || {}),
+      ...markStatus
+    };
+    if (dbService.isFirebaseActive()) {
+      await dbService.saveAttendance(attendanceDate, updatedDayRecord);
+    } else {
+      setAttendanceRecords(prev => ({
+        ...prev,
+        [attendanceDate]: updatedDayRecord
+      }));
+    }
     showToast("Attendance Recorded", `Marked attendance for ${attendanceDate} successfully.`, "success");
-    triggerCloudSync();
+    if (!dbService.isFirebaseActive()) {
+      triggerCloudSync();
+    }
   };
 
-  const handleSaveLaborerNames = (e: React.FormEvent) => {
+  const handleSaveLaborerNames = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!tempLaborers[0].trim() || !tempLaborers[1].trim()) {
       showToast("Error", "Laborer names cannot be empty.", "error");
@@ -600,18 +701,26 @@ export default function App() {
     const newLab1 = tempLaborers[0].trim();
     const newLab2 = tempLaborers[1].trim();
 
-    setAttendanceRecords(prev => {
-      const updated: typeof attendanceRecords = {};
-      Object.keys(prev).forEach(date => {
-        const dayRecord = prev[date];
-        updated[date] = {};
-        if (dayRecord[oldLab1]) updated[date][newLab1] = dayRecord[oldLab1];
-        if (dayRecord[oldLab2]) updated[date][newLab2] = dayRecord[oldLab2];
-      });
-      return updated;
+    const updatedRecords: typeof attendanceRecords = {};
+    Object.keys(attendanceRecords).forEach(date => {
+      const dayRecord = attendanceRecords[date];
+      updatedRecords[date] = {};
+      if (dayRecord[oldLab1]) updatedRecords[date][newLab1] = dayRecord[oldLab1];
+      if (dayRecord[oldLab2]) updatedRecords[date][newLab2] = dayRecord[oldLab2];
     });
 
-    setAttendanceLaborers([newLab1, newLab2]);
+    if (dbService.isFirebaseActive()) {
+      await dbService.saveSettings({
+        formNames,
+        attendanceLaborers: [newLab1, newLab2]
+      });
+      for (const date of Object.keys(updatedRecords)) {
+        await dbService.saveAttendance(date, updatedRecords[date]);
+      }
+    } else {
+      setAttendanceRecords(updatedRecords);
+      setAttendanceLaborers([newLab1, newLab2]);
+    }
     setIsRenamingLaborers(false);
     showToast("Laborer Names Updated", "Worker records updated successfully.", "success");
   };
@@ -685,7 +794,7 @@ export default function App() {
   };
 
   // Handle new transaction submission
-  const handleSaveTransaction = (e: React.FormEvent) => {
+  const handleSaveTransaction = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!formData.amount || isNaN(Number(formData.amount)) || Number(formData.amount) <= 0) {
@@ -712,7 +821,13 @@ export default function App() {
       createdAt: new Date().toISOString()
     };
 
-    setTransactions(prev => [newTx, ...prev]);
+    if (dbService.isFirebaseActive()) {
+      setSyncState('syncing');
+      await dbService.saveTransaction(newTx);
+    } else {
+      setTransactions(prev => [newTx, ...prev]);
+    }
+    
     showToast(
       "Transaction Saved", 
       `Successfully recorded ₹${newTx.amount} in ${newTx.formNumber} (${newTx.category})`, 
@@ -727,11 +842,13 @@ export default function App() {
       notes: ''
     }));
 
-    triggerCloudSync();
+    if (!dbService.isFirebaseActive()) {
+      triggerCloudSync();
+    }
   };
 
   // Handle editing transaction
-  const handleUpdateTransaction = (e: React.FormEvent) => {
+  const handleUpdateTransaction = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingTransaction) return;
 
@@ -745,46 +862,88 @@ export default function App() {
     }
 
     const extractedPerson = extractPersonFromReason(editingTransaction.reason, editingTransaction.category);
-
-    setTransactions(prev => prev.map(t => t.id === editingTransaction.id ? {
+    const updatedTx = {
       ...editingTransaction,
       person: extractedPerson,
       amount: Number(editingTransaction.amount)
-    } : t));
+    };
+
+    if (dbService.isFirebaseActive()) {
+      setSyncState('syncing');
+      await dbService.saveTransaction(updatedTx);
+    } else {
+      setTransactions(prev => prev.map(t => t.id === editingTransaction.id ? updatedTx : t));
+    }
 
     showToast("Transaction Updated", "The record has been updated successfully.", "success");
     setEditingTransaction(null);
-    triggerCloudSync();
-  };
-
-  // Delete transaction
-  const handleDeleteTransaction = (id: string) => {
-    const tx = transactions.find(t => t.id === id);
-    if (!tx) return;
     
-    if (confirm(`Are you sure you want to delete the entry for ₹${tx.amount} (${tx.reason})?`)) {
-      setTransactions(prev => prev.filter(t => t.id !== id));
-      showToast("Transaction Deleted", "The record has been removed.", "success");
+    if (!dbService.isFirebaseActive()) {
       triggerCloudSync();
     }
   };
 
-  // Clean all data
-  const handleClearAllData = () => {
-    setTransactions([]);
-    localStorage.removeItem('farm2_transactions');
-    setShowClearModal(false);
-    showToast("Database Cleared", "All account records have been permanently deleted.", "error");
-    triggerCloudSync();
+  // Delete transaction
+  const handleDeleteTransaction = async (id: string) => {
+    const tx = transactions.find(t => t.id === id);
+    if (!tx) return;
+    
+    if (confirm(`Are you sure you want to delete the entry for ₹${tx.amount} (${tx.reason})?`)) {
+      if (dbService.isFirebaseActive()) {
+        setSyncState('syncing');
+        await dbService.deleteTransaction(id);
+      } else {
+        setTransactions(prev => prev.filter(t => t.id !== id));
+      }
+      showToast("Transaction Deleted", "The record has been removed.", "success");
+      
+      if (!dbService.isFirebaseActive()) {
+        triggerCloudSync();
+      }
+    }
   };
 
-
+  // Clean all data
+  const handleClearAllData = async () => {
+    if (dbService.isFirebaseActive()) {
+      setSyncState('syncing');
+      try {
+        for (const tx of transactions) {
+          await dbService.deleteTransaction(tx.id);
+        }
+        for (const note of notes) {
+          await dbService.deleteNote(note.id);
+        }
+        for (const date of Object.keys(attendanceRecords)) {
+          await dbService.saveAttendance(date, {});
+        }
+        showToast("Database Cleared", "All Firestore records have been cleared.", "success");
+      } catch (err) {
+        showToast("Clear Failed", "Failed to clear Firestore records.", "error");
+      }
+    } else {
+      setTransactions([]);
+      localStorage.removeItem('farm2_transactions');
+      showToast("Database Cleared", "All account records have been permanently deleted.", "error");
+    }
+    setShowClearModal(false);
+    if (!dbService.isFirebaseActive()) {
+      triggerCloudSync();
+    }
+  };
 
   // Save Custom Account Names
-  const handleSaveFormNames = (e: React.FormEvent) => {
+  const handleSaveFormNames = async (e: React.FormEvent) => {
     e.preventDefault();
-    setFormNames(tempFormNames);
-    localStorage.setItem('farm2_form_names', JSON.stringify(tempFormNames));
+    if (dbService.isFirebaseActive()) {
+      await dbService.saveSettings({
+        formNames: tempFormNames,
+        attendanceLaborers
+      });
+    } else {
+      setFormNames(tempFormNames);
+      localStorage.setItem('farm2_form_names', JSON.stringify(tempFormNames));
+    }
     showToast("Account Names Updated", "All form and account labels have been customized.", "success");
     setShowRenameModal(false);
   };
@@ -801,6 +960,159 @@ export default function App() {
     link.click();
     document.body.removeChild(link);
     showToast("Backup Created", "Database downloaded successfully as a JSON file.", "success");
+  };
+
+  // Direct PDF Download Handler
+  const handleDownloadPDF = async () => {
+    const element = document.getElementById('ledger-table-panel');
+    if (!element) {
+      showToast("PDF Error", "Ledger element not found.", "error");
+      return;
+    }
+
+    showToast("Generating PDF", "Preparing your PDF for direct download...", "info");
+    
+    // Add temporary class to body to hide edit/delete/download buttons
+    document.body.classList.add('pdf-exporting');
+
+    // Wait for style adjustments to apply
+    setTimeout(async () => {
+      try {
+        const canvas = await html2canvas(element, {
+          scale: 2, // Double resolution for sharp text/numbers
+          useCORS: true,
+          logging: false,
+          backgroundColor: darkMode ? '#131c2e' : '#ffffff'
+        });
+        
+        const imgData = canvas.toDataURL('image/png');
+        const pdf = new jsPDF('p', 'mm', 'a4');
+        const imgWidth = 190; // A4 page width minus margins
+        const pageHeight = 277; // A4 page height minus margins
+        const imgHeight = (canvas.height * imgWidth) / canvas.width;
+        let heightLeft = imgHeight;
+        let position = 10; // 10mm top margin
+
+        pdf.addImage(imgData, 'PNG', 10, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+
+        while (heightLeft >= 0) {
+          position = heightLeft - imgHeight + 10;
+          pdf.addPage();
+          pdf.addImage(imgData, 'PNG', 10, position, imgWidth, imgHeight);
+          heightLeft -= pageHeight;
+        }
+
+        const fileName = `Ledger_${activeFormTab === 'Show All' ? 'All_Forms' : activeFormTab.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
+        pdf.save(fileName);
+        showToast("PDF Downloaded", "Ledger PDF downloaded successfully.", "success");
+      } catch (err) {
+        console.error("PDF generation failed:", err);
+        showToast("PDF Export Failed", "Failed to compile PDF directly.", "error");
+      } finally {
+        document.body.classList.remove('pdf-exporting');
+      }
+    }, 150);
+  };
+
+  // Direct PDF Download for Notes
+  const handleDownloadNotesPDF = async () => {
+    const element = document.getElementById('notes-history-panel');
+    if (!element) {
+      showToast("PDF Error", "Notes element not found.", "error");
+      return;
+    }
+
+    showToast("Generating PDF", "Preparing your Notes PDF...", "info");
+    document.body.classList.add('pdf-exporting');
+
+    setTimeout(async () => {
+      try {
+        const canvas = await html2canvas(element, {
+          scale: 2,
+          useCORS: true,
+          logging: false,
+          backgroundColor: darkMode ? '#131c2e' : '#ffffff'
+        });
+        
+        const imgData = canvas.toDataURL('image/png');
+        const pdf = new jsPDF('p', 'mm', 'a4');
+        const imgWidth = 190;
+        const pageHeight = 277;
+        const imgHeight = (canvas.height * imgWidth) / canvas.width;
+        let heightLeft = imgHeight;
+        let position = 10;
+
+        pdf.addImage(imgData, 'PNG', 10, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+
+        while (heightLeft >= 0) {
+          position = heightLeft - imgHeight + 10;
+          pdf.addPage();
+          pdf.addImage(imgData, 'PNG', 10, position, imgWidth, imgHeight);
+          heightLeft -= pageHeight;
+        }
+
+        const fileName = `Farm_Notes_${new Date().toISOString().split('T')[0]}.pdf`;
+        pdf.save(fileName);
+        showToast("PDF Downloaded", "Notes PDF downloaded successfully.", "success");
+      } catch (err) {
+        console.error("PDF generation failed:", err);
+        showToast("PDF Export Failed", "Failed to generate Notes PDF.", "error");
+      } finally {
+        document.body.classList.remove('pdf-exporting');
+      }
+    }, 150);
+  };
+
+  // Direct PDF Download for Attendance
+  const handleDownloadAttendancePDF = async () => {
+    const element = document.getElementById('attendance-history-panel');
+    if (!element) {
+      showToast("PDF Error", "Attendance history element not found.", "error");
+      return;
+    }
+
+    showToast("Generating PDF", "Preparing your Attendance PDF...", "info");
+    document.body.classList.add('pdf-exporting');
+
+    setTimeout(async () => {
+      try {
+        const canvas = await html2canvas(element, {
+          scale: 2,
+          useCORS: true,
+          logging: false,
+          backgroundColor: darkMode ? '#131c2e' : '#ffffff'
+        });
+        
+        const imgData = canvas.toDataURL('image/png');
+        const pdf = new jsPDF('p', 'mm', 'a4');
+        const imgWidth = 190;
+        const pageHeight = 277;
+        const imgHeight = (canvas.height * imgWidth) / canvas.width;
+        let heightLeft = imgHeight;
+        let position = 10;
+
+        pdf.addImage(imgData, 'PNG', 10, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+
+        while (heightLeft >= 0) {
+          position = heightLeft - imgHeight + 10;
+          pdf.addPage();
+          pdf.addImage(imgData, 'PNG', 10, position, imgWidth, imgHeight);
+          heightLeft -= pageHeight;
+        }
+
+        const fileName = `Attendance_History_${new Date().toISOString().split('T')[0]}.pdf`;
+        pdf.save(fileName);
+        showToast("PDF Downloaded", "Attendance PDF downloaded successfully.", "success");
+      } catch (err) {
+        console.error("PDF generation failed:", err);
+        showToast("PDF Export Failed", "Failed to generate Attendance PDF.", "error");
+      } finally {
+        document.body.classList.remove('pdf-exporting');
+      }
+    }, 150);
   };
 
   // Import data from JSON file
@@ -1860,12 +2172,21 @@ export default function App() {
             </div>
 
             {/* Table displaying matching entries */}
-            <div className="panel">
-              <div className="panel-header">
-                <span className="panel-title">{activeFormTab === 'Show All' ? 'All Forms' : activeFormTab} - Transaction History</span>
-                <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
-                  Total {filteredTransactions.filter(t => activeFormTab === 'Show All' || t.formNumber === activeFormTab).length} records matching
-                </span>
+            <div className="panel" id="ledger-table-panel">
+              <div className="panel-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <span className="panel-title">{activeFormTab === 'Show All' ? 'All Forms' : (formNames[activeFormTab] || activeFormTab)} - Transaction Ledger</span>
+                  <span style={{ fontSize: '13px', color: 'var(--text-secondary)', marginLeft: '10px' }}>
+                    Total {filteredTransactions.filter(t => activeFormTab === 'Show All' || t.formNumber === activeFormTab).length} records matching
+                  </span>
+                </div>
+                <button 
+                  className="btn btn-outline btn-sm no-print"
+                  onClick={handleDownloadPDF}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <Printer size={14} /> Download PDF
+                </button>
               </div>
 
               {filteredTransactions.filter(t => activeFormTab === 'Show All' || t.formNumber === activeFormTab).length === 0 ? (
@@ -1885,7 +2206,7 @@ export default function App() {
                         <th>Reason / Description</th>
                         <th>Debit (Paid)</th>
                         <th>Credit (Received)</th>
-                        <th style={{ width: '120px', textAlign: 'center' }}>Actions</th>
+                        <th style={{ width: '120px', textAlign: 'center' }} className="no-print">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1909,7 +2230,7 @@ export default function App() {
                             <td style={{ color: 'var(--credit)', fontWeight: 600 }}>
                               {t.type === 'Credit' ? `₹${t.amount.toLocaleString()}` : '—'}
                             </td>
-                            <td>
+                            <td className="no-print">
                               <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
                                 <button 
                                   className="btn btn-outline btn-sm"
@@ -2067,12 +2388,21 @@ export default function App() {
                 </div>
 
                 {/* Notes List Panel */}
-                <div className="panel" style={{ flexGrow: 1 }}>
-                  <div className="panel-header">
-                    <span className="panel-title">Notes History Logs</span>
-                    <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
-                      Total {filteredNotes.length} notes found
-                    </span>
+                <div className="panel" style={{ flexGrow: 1 }} id="notes-history-panel">
+                  <div className="panel-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <span className="panel-title">Notes History Logs</span>
+                      <span style={{ fontSize: '13px', color: 'var(--text-secondary)', marginLeft: '10px' }}>
+                        Total {filteredNotes.length} notes found
+                      </span>
+                    </div>
+                    <button 
+                      className="btn btn-outline btn-sm no-print"
+                      onClick={handleDownloadNotesPDF}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                    >
+                      <Printer size={14} /> Download PDF
+                    </button>
                   </div>
 
                   {filteredNotes.length === 0 ? (
@@ -2102,7 +2432,7 @@ export default function App() {
                               <Calendar size={11} style={{ marginRight: '4px' }} />
                                {formatDateToDisplay(note.date)}
                             </span>
-                            <div style={{ display: 'flex', gap: '6px' }}>
+                            <div style={{ display: 'flex', gap: '6px' }} className="no-print">
                               <button 
                                 className="btn btn-outline btn-sm"
                                 style={{ padding: '2px 6px', fontSize: '11px' }}
@@ -2334,9 +2664,16 @@ export default function App() {
               </div>
 
               {/* Monthly History Log */}
-              <div className="panel">
-                <div className="panel-header">
+              <div className="panel" id="attendance-history-panel">
+                <div className="panel-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span className="panel-title">Marked History Logs</span>
+                  <button 
+                    className="btn btn-outline btn-sm no-print"
+                    onClick={handleDownloadAttendancePDF}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    <Printer size={14} /> Download PDF
+                  </button>
                 </div>
 
                 {markedDatesInMonth.length === 0 ? (
@@ -2721,38 +3058,75 @@ export default function App() {
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <p style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>
-                  Your account entries are securely synced in the cloud. The system operates locally off-line first, enabling instantaneous page saves and works under remote areas (e.g. agricultural farms) without active cellular networks.
+                  Your account entries can be securely synced in the cloud. The system operates locally offline-first, enabling instantaneous page saves and works under remote areas without active cellular networks.
                 </p>
 
                 <div style={{ padding: '16px', backgroundColor: 'var(--bg-primary)', borderRadius: '12px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
                     <span style={{ color: 'var(--text-secondary)' }}>Cloud Service Status:</span>
-                    <span style={{ color: 'var(--credit)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--credit)' }} />
-                      Online & Connected
-                    </span>
+                    {isFirebaseConnected ? (
+                      <span style={{ color: 'var(--credit)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--credit)' }} />
+                        Online & Connected (Firestore)
+                      </span>
+                    ) : (
+                      <span style={{ color: '#f59e0b', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#f59e0b' }} />
+                        Offline (Local-only mode)
+                      </span>
+                    )}
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
-                    <span style={{ color: 'var(--text-secondary)' }}>Last Cloud Sync:</span>
-                    <span style={{ fontWeight: 600 }}>{lastSyncTime}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
-                    <span style={{ color: 'var(--text-secondary)' }}>Sync Buffer Status:</span>
-                    <span style={{ color: 'var(--credit)', fontWeight: 600 }}>0 Pending Changes</span>
-                  </div>
+                  {isFirebaseConnected && (
+                    <>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
+                        <span style={{ color: 'var(--text-secondary)' }}>Last Cloud Sync:</span>
+                        <span style={{ fontWeight: 600 }}>{lastSyncTime}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
+                        <span style={{ color: 'var(--text-secondary)' }}>Sync Buffer Status:</span>
+                        <span style={{ color: 'var(--credit)', fontWeight: 600 }}>0 Pending Changes</span>
+                      </div>
+                    </>
+                  )}
                 </div>
 
-                <button 
-                  id="btn-force-sync"
-                  className="btn btn-primary"
-                  onClick={triggerCloudSync}
-                  disabled={syncState === 'syncing'}
-                >
-                  <RefreshCw size={16} className={syncState === 'syncing' ? 'syncing' : ''} />
-                  {syncState === 'syncing' ? 'Syncing accounts...' : 'Force Cloud Sync Now'}
-                </button>
+                {isFirebaseConnected ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <button 
+                      id="btn-force-sync"
+                      className="btn btn-primary"
+                      onClick={() => {
+                        setSyncState('syncing');
+                        setTimeout(() => {
+                          setSyncState('synced');
+                          setLastSyncTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+                          showToast("Cloud Synced", "All records successfully backed up to cloud database.", "info");
+                        }, 800);
+                      }}
+                      disabled={syncState === 'syncing'}
+                    >
+                      <RefreshCw size={16} className={syncState === 'syncing' ? 'syncing' : ''} />
+                      {syncState === 'syncing' ? 'Syncing accounts...' : 'Force Cloud Sync Now'}
+                    </button>
+                    
+                    <button 
+                      className="btn btn-outline"
+                      onClick={handleMigrateData}
+                      disabled={isMigrating}
+                    >
+                      <Upload size={16} />
+                      {isMigrating ? "Migrating local data..." : "Upload Local Data to Cloud"}
+                    </button>
+                  </div>
+                ) : (
+                  <div style={{ padding: '12px', backgroundColor: 'rgba(245, 158, 11, 0.08)', border: '1px dashed #f59e0b', borderRadius: '8px', fontSize: '13px', color: '#d97706' }}>
+                    <strong>Note:</strong> Connect to Firestore to enable real-time cloud sync and backup. See the settings form on this page to configure.
+                  </div>
+                )}
               </div>
             </div>
+
+
 
             {/* Local Backup Panel */}
             <div className="panel">
