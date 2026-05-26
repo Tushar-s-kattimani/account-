@@ -825,7 +825,8 @@ export default function App() {
           scale: 2, // Double resolution for sharp text/numbers
           useCORS: true,
           logging: false,
-          backgroundColor: darkMode ? '#131c2e' : '#ffffff'
+          backgroundColor: darkMode ? '#131c2e' : '#ffffff',
+          windowWidth: 1100
         });
         
         const imgData = canvas.toDataURL('image/png');
@@ -875,7 +876,8 @@ export default function App() {
           scale: 2,
           useCORS: true,
           logging: false,
-          backgroundColor: darkMode ? '#131c2e' : '#ffffff'
+          backgroundColor: darkMode ? '#131c2e' : '#ffffff',
+          windowWidth: 1100
         });
         
         const imgData = canvas.toDataURL('image/png');
@@ -925,7 +927,8 @@ export default function App() {
           scale: 2,
           useCORS: true,
           logging: false,
-          backgroundColor: darkMode ? '#131c2e' : '#ffffff'
+          backgroundColor: darkMode ? '#131c2e' : '#ffffff',
+          windowWidth: 1100
         });
         
         const imgData = canvas.toDataURL('image/png');
