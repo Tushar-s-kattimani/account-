@@ -444,11 +444,15 @@ export default function App() {
   const [tempLaborers, setTempLaborers] = useState<string[]>(['', '']);
 
   useEffect(() => {
-    localStorage.setItem('farm2_attendance_laborers', JSON.stringify(attendanceLaborers));
+    if (!dbService.isFirebaseActive()) {
+      localStorage.setItem('farm2_attendance_laborers', JSON.stringify(attendanceLaborers));
+    }
   }, [attendanceLaborers]);
 
   useEffect(() => {
-    localStorage.setItem('farm2_attendance_records', JSON.stringify(attendanceRecords));
+    if (!dbService.isFirebaseActive()) {
+      localStorage.setItem('farm2_attendance_records', JSON.stringify(attendanceRecords));
+    }
   }, [attendanceRecords]);
 
   useEffect(() => {
@@ -483,7 +487,9 @@ export default function App() {
   const [noteDateFilter, setNoteDateFilter] = useState('');
 
   useEffect(() => {
-    localStorage.setItem('farm2_notes', JSON.stringify(notes));
+    if (!dbService.isFirebaseActive()) {
+      localStorage.setItem('farm2_notes', JSON.stringify(notes));
+    }
   }, [notes]);
 
   // Save Note (Add or Update)
@@ -727,7 +733,9 @@ export default function App() {
 
   // Save to LocalStorage on modifications
   useEffect(() => {
-    localStorage.setItem('farm2_transactions', JSON.stringify(transactions));
+    if (!dbService.isFirebaseActive()) {
+      localStorage.setItem('farm2_transactions', JSON.stringify(transactions));
+    }
   }, [transactions]);
 
   useEffect(() => {
