@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import * as dbService from './services/db';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 import { 
@@ -332,113 +331,7 @@ export default function App() {
     }
   }, [activeFormTab]);
 
-  // --- Firebase & Sync States ---
-  const [isFirebaseConnected, setIsFirebaseConnected] = useState<boolean>(dbService.isFirebaseActive());
-  const [isMigrating, setIsMigrating] = useState<boolean>(false);
-  const [firebaseConfigForm, setFirebaseConfigForm] = useState<dbService.FirebaseConfig>(() => {
-    const config = dbService.getFirebaseConfig();
-    return config || {
-      apiKey: '',
-      authDomain: '',
-      projectId: '',
-      storageBucket: '',
-      messagingSenderId: '',
-      appId: ''
-    };
-  });
 
-  // Setup Firestore Subscriptions
-  useEffect(() => {
-    if (!dbService.isFirebaseActive()) {
-      setIsFirebaseConnected(false);
-      return;
-    }
-
-    setIsFirebaseConnected(true);
-    setSyncState('syncing');
-
-    // Subscribe to transactions
-    const unsubTxs = dbService.subscribeTransactions((updatedTxs) => {
-      setTransactions(updatedTxs);
-      setSyncState('synced');
-      setLastSyncTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
-    });
-
-    // Subscribe to notes
-    const unsubNotes = dbService.subscribeNotes((updatedNotes) => {
-      setNotes(updatedNotes);
-    });
-
-    // Subscribe to attendance records
-    const unsubAttendance = dbService.subscribeAttendance((updatedRecords) => {
-      setAttendanceRecords(updatedRecords);
-    });
-
-    // Subscribe to settings
-    const unsubSettings = dbService.subscribeSettings((settings) => {
-      if (settings.formNames) {
-        setFormNames(settings.formNames);
-      }
-      if (settings.attendanceLaborers) {
-        setAttendanceLaborers(settings.attendanceLaborers);
-      }
-    });
-
-    return () => {
-      unsubTxs();
-      unsubNotes();
-      unsubAttendance();
-      unsubSettings();
-    };
-  }, []);
-
-
-  const handleSaveFirebaseConfig = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!firebaseConfigForm.apiKey || !firebaseConfigForm.projectId) {
-      showToast("Config Error", "API Key and Project ID are required.", "error");
-      return;
-    }
-    dbService.saveFirebaseConfig(firebaseConfigForm);
-    showToast("Config Saved", "Reloading application to connect to Firestore...", "success");
-    setTimeout(() => {
-      window.location.reload();
-    }, 1500);
-  };
-
-  const handleClearFirebaseConfig = () => {
-    if (confirm("Are you sure you want to disconnect Firestore? The app will revert to Local Storage.")) {
-      dbService.clearFirebaseConfig();
-      showToast("Config Cleared", "Reloading application to disconnect...", "info");
-      setTimeout(() => {
-        window.location.reload();
-      }, 1500);
-    }
-  };
-
-  const handleMigrateData = async () => {
-    if (!dbService.isFirebaseActive()) {
-      showToast("Cannot Migrate", "Firebase is not configured yet.", "error");
-      return;
-    }
-    setIsMigrating(true);
-    showToast("Migration Started", "Uploading local ledger records to Firestore...", "info");
-    try {
-      await dbService.migrateLocalToCloud({
-        transactions,
-        notes,
-        attendanceRecords,
-        formNames,
-        attendanceLaborers
-      });
-      showToast("Migration Complete", "All local data has been successfully synced to Firestore!", "success");
-    } catch (e: any) {
-      console.error(e);
-      showToast("Migration Failed", e.message || "An error occurred during migration.", "error");
-    } finally {
-      setIsMigrating(false);
-    }
-  };
 
   // --- UI Toast & Popups ---
   const [toasts, setToasts] = useState<{id: string, title: string, message: string, type: 'success' | 'error' | 'info'}[]>([]);
@@ -478,15 +371,11 @@ export default function App() {
   const [tempLaborers, setTempLaborers] = useState<string[]>(['', '']);
 
   useEffect(() => {
-    if (!dbService.isFirebaseActive()) {
-      localStorage.setItem('farm2_attendance_laborers', JSON.stringify(attendanceLaborers));
-    }
+    localStorage.setItem('farm2_attendance_laborers', JSON.stringify(attendanceLaborers));
   }, [attendanceLaborers]);
 
   useEffect(() => {
-    if (!dbService.isFirebaseActive()) {
-      localStorage.setItem('farm2_attendance_records', JSON.stringify(attendanceRecords));
-    }
+    localStorage.setItem('farm2_attendance_records', JSON.stringify(attendanceRecords));
   }, [attendanceRecords]);
 
   useEffect(() => {
@@ -521,13 +410,11 @@ export default function App() {
   const [noteDateFilter, setNoteDateFilter] = useState('');
 
   useEffect(() => {
-    if (!dbService.isFirebaseActive()) {
-      localStorage.setItem('farm2_notes', JSON.stringify(notes));
-    }
+    localStorage.setItem('farm2_notes', JSON.stringify(notes));
   }, [notes]);
 
   // Save Note (Add or Update)
-  const handleSaveNote = async (e: React.FormEvent) => {
+  const handleSaveNote = (e: React.FormEvent) => {
     e.preventDefault();
     if (!noteFormData.title.trim()) {
       showToast("Missing Field", "Please enter a title for the note.", "error");
@@ -539,17 +426,12 @@ export default function App() {
     }
 
     if (editingNote) {
-      const updatedNote: Note = {
-        ...editingNote,
+      setNotes(prev => prev.map(n => n.id === editingNote.id ? {
+        ...n,
         date: noteFormData.date,
         title: noteFormData.title.trim(),
         content: noteFormData.content.trim()
-      };
-      if (dbService.isFirebaseActive()) {
-        await dbService.saveNote(updatedNote);
-      } else {
-        setNotes(prev => prev.map(n => n.id === editingNote.id ? updatedNote : n));
-      }
+      } : n));
       showToast("Note Updated", "The note has been successfully modified.", "success");
       setEditingNote(null);
     } else {
@@ -560,11 +442,7 @@ export default function App() {
         content: noteFormData.content.trim(),
         createdAt: new Date().toISOString()
       };
-      if (dbService.isFirebaseActive()) {
-        await dbService.saveNote(newNote);
-      } else {
-        setNotes(prev => [newNote, ...prev]);
-      }
+      setNotes(prev => [newNote, ...prev]);
       showToast("Note Saved", "Daily note recorded successfully.", "success");
     }
 
@@ -574,23 +452,15 @@ export default function App() {
       content: ''
     });
 
-    if (!dbService.isFirebaseActive()) {
-      triggerCloudSync();
-    }
+    triggerCloudSync();
   };
 
   // Delete Note
-  const handleDeleteNote = async (id: string) => {
+  const handleDeleteNote = (id: string) => {
     if (confirm("Are you sure you want to delete this note?")) {
-      if (dbService.isFirebaseActive()) {
-        await dbService.deleteNote(id);
-      } else {
-        setNotes(prev => prev.filter(n => n.id !== id));
-      }
+      setNotes(prev => prev.filter(n => n.id !== id));
       showToast("Note Deleted", "The note has been removed.", "success");
-      if (!dbService.isFirebaseActive()) {
-        triggerCloudSync();
-      }
+      triggerCloudSync();
     }
   };
 
@@ -710,27 +580,20 @@ export default function App() {
     return stats;
   }, [datesInSelectedWeek, attendanceRecords, attendanceLaborers]);
 
-  const handleSaveAttendance = async (e: React.FormEvent) => {
+  const handleSaveAttendance = (e: React.FormEvent) => {
     e.preventDefault();
-    const updatedDayRecord = {
-      ...(attendanceRecords[attendanceDate] || {}),
-      ...markStatus
-    };
-    if (dbService.isFirebaseActive()) {
-      await dbService.saveAttendance(attendanceDate, updatedDayRecord);
-    } else {
-      setAttendanceRecords(prev => ({
-        ...prev,
-        [attendanceDate]: updatedDayRecord
-      }));
-    }
+    setAttendanceRecords(prev => ({
+      ...prev,
+      [attendanceDate]: {
+        ...prev[attendanceDate],
+        ...markStatus
+      }
+    }));
     showToast("Attendance Recorded", `Marked attendance for ${attendanceDate} successfully.`, "success");
-    if (!dbService.isFirebaseActive()) {
-      triggerCloudSync();
-    }
+    triggerCloudSync();
   };
 
-  const handleSaveLaborerNames = async (e: React.FormEvent) => {
+  const handleSaveLaborerNames = (e: React.FormEvent) => {
     e.preventDefault();
     if (!tempLaborers[0].trim() || !tempLaborers[1].trim()) {
       showToast("Error", "Laborer names cannot be empty.", "error");
@@ -741,35 +604,25 @@ export default function App() {
     const newLab1 = tempLaborers[0].trim();
     const newLab2 = tempLaborers[1].trim();
 
-    const updatedRecords: typeof attendanceRecords = {};
-    Object.keys(attendanceRecords).forEach(date => {
-      const dayRecord = attendanceRecords[date];
-      updatedRecords[date] = {};
-      if (dayRecord[oldLab1]) updatedRecords[date][newLab1] = dayRecord[oldLab1];
-      if (dayRecord[oldLab2]) updatedRecords[date][newLab2] = dayRecord[oldLab2];
+    setAttendanceRecords(prev => {
+      const updated: typeof attendanceRecords = {};
+      Object.keys(prev).forEach(date => {
+        const dayRecord = prev[date];
+        updated[date] = {};
+        if (dayRecord[oldLab1]) updated[date][newLab1] = dayRecord[oldLab1];
+        if (dayRecord[oldLab2]) updated[date][newLab2] = dayRecord[oldLab2];
+      });
+      return updated;
     });
 
-    if (dbService.isFirebaseActive()) {
-      await dbService.saveSettings({
-        formNames,
-        attendanceLaborers: [newLab1, newLab2]
-      });
-      for (const date of Object.keys(updatedRecords)) {
-        await dbService.saveAttendance(date, updatedRecords[date]);
-      }
-    } else {
-      setAttendanceRecords(updatedRecords);
-      setAttendanceLaborers([newLab1, newLab2]);
-    }
+    setAttendanceLaborers([newLab1, newLab2]);
     setIsRenamingLaborers(false);
     showToast("Laborer Names Updated", "Worker records updated successfully.", "success");
   };
 
   // Save to LocalStorage on modifications
   useEffect(() => {
-    if (!dbService.isFirebaseActive()) {
-      localStorage.setItem('farm2_transactions', JSON.stringify(transactions));
-    }
+    localStorage.setItem('farm2_transactions', JSON.stringify(transactions));
   }, [transactions]);
 
   useEffect(() => {
@@ -836,7 +689,7 @@ export default function App() {
   };
 
   // Handle new transaction submission
-  const handleSaveTransaction = async (e: React.FormEvent) => {
+  const handleSaveTransaction = (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!formData.amount || isNaN(Number(formData.amount)) || Number(formData.amount) <= 0) {
@@ -863,12 +716,7 @@ export default function App() {
       createdAt: new Date().toISOString()
     };
 
-    if (dbService.isFirebaseActive()) {
-      setSyncState('syncing');
-      await dbService.saveTransaction(newTx);
-    } else {
-      setTransactions(prev => [newTx, ...prev]);
-    }
+    setTransactions(prev => [newTx, ...prev]);
     
     showToast(
       "Transaction Saved", 
@@ -884,13 +732,11 @@ export default function App() {
       notes: ''
     }));
 
-    if (!dbService.isFirebaseActive()) {
-      triggerCloudSync();
-    }
+    triggerCloudSync();
   };
 
   // Handle editing transaction
-  const handleUpdateTransaction = async (e: React.FormEvent) => {
+  const handleUpdateTransaction = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingTransaction) return;
 
@@ -904,88 +750,43 @@ export default function App() {
     }
 
     const extractedPerson = extractPersonFromReason(editingTransaction.reason, editingTransaction.category);
-    const updatedTx = {
+    setTransactions(prev => prev.map(t => t.id === editingTransaction.id ? {
       ...editingTransaction,
       person: extractedPerson,
       amount: Number(editingTransaction.amount)
-    };
-
-    if (dbService.isFirebaseActive()) {
-      setSyncState('syncing');
-      await dbService.saveTransaction(updatedTx);
-    } else {
-      setTransactions(prev => prev.map(t => t.id === editingTransaction.id ? updatedTx : t));
-    }
+    } : t));
 
     showToast("Transaction Updated", "The record has been updated successfully.", "success");
     setEditingTransaction(null);
-    
-    if (!dbService.isFirebaseActive()) {
-      triggerCloudSync();
-    }
+    triggerCloudSync();
   };
 
   // Delete transaction
-  const handleDeleteTransaction = async (id: string) => {
+  const handleDeleteTransaction = (id: string) => {
     const tx = transactions.find(t => t.id === id);
     if (!tx) return;
     
     if (confirm(`Are you sure you want to delete the entry for ₹${tx.amount} (${tx.reason})?`)) {
-      if (dbService.isFirebaseActive()) {
-        setSyncState('syncing');
-        await dbService.deleteTransaction(id);
-      } else {
-        setTransactions(prev => prev.filter(t => t.id !== id));
-      }
+      setTransactions(prev => prev.filter(t => t.id !== id));
       showToast("Transaction Deleted", "The record has been removed.", "success");
-      
-      if (!dbService.isFirebaseActive()) {
-        triggerCloudSync();
-      }
-    }
-  };
-
-  // Clean all data
-  const handleClearAllData = async () => {
-    if (dbService.isFirebaseActive()) {
-      setSyncState('syncing');
-      try {
-        for (const tx of transactions) {
-          await dbService.deleteTransaction(tx.id);
-        }
-        for (const note of notes) {
-          await dbService.deleteNote(note.id);
-        }
-        for (const date of Object.keys(attendanceRecords)) {
-          await dbService.saveAttendance(date, {});
-        }
-        showToast("Database Cleared", "All Firestore records have been cleared.", "success");
-      } catch (err) {
-        showToast("Clear Failed", "Failed to clear Firestore records.", "error");
-      }
-    } else {
-      setTransactions([]);
-      localStorage.removeItem('farm2_transactions');
-      showToast("Database Cleared", "All account records have been permanently deleted.", "error");
-    }
-    setShowClearModal(false);
-    if (!dbService.isFirebaseActive()) {
       triggerCloudSync();
     }
   };
 
+  // Clean all data
+  const handleClearAllData = () => {
+    setTransactions([]);
+    localStorage.removeItem('farm2_transactions');
+    setShowClearModal(false);
+    showToast("Database Cleared", "All account records have been permanently deleted.", "error");
+    triggerCloudSync();
+  };
+
   // Save Custom Account Names
-  const handleSaveFormNames = async (e: React.FormEvent) => {
+  const handleSaveFormNames = (e: React.FormEvent) => {
     e.preventDefault();
-    if (dbService.isFirebaseActive()) {
-      await dbService.saveSettings({
-        formNames: tempFormNames,
-        attendanceLaborers
-      });
-    } else {
-      setFormNames(tempFormNames);
-      localStorage.setItem('farm2_form_names', JSON.stringify(tempFormNames));
-    }
+    setFormNames(tempFormNames);
+    localStorage.setItem('farm2_form_names', JSON.stringify(tempFormNames));
     showToast("Account Names Updated", "All form and account labels have been customized.", "success");
     setShowRenameModal(false);
   };
@@ -3100,151 +2901,36 @@ export default function App() {
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <p style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>
-                  Your account entries can be securely synced in the cloud. The system operates locally offline-first, enabling instantaneous page saves and works under remote areas without active cellular networks.
+                  Your account entries are securely synced in the cloud. The system operates locally off-line first, enabling instantaneous page saves and works under remote areas (e.g. agricultural farms) without active cellular networks.
                 </p>
 
                 <div style={{ padding: '16px', backgroundColor: 'var(--bg-primary)', borderRadius: '12px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
                     <span style={{ color: 'var(--text-secondary)' }}>Cloud Service Status:</span>
-                    {isFirebaseConnected ? (
-                      <span style={{ color: 'var(--credit)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--credit)' }} />
-                        Online & Connected (Firestore)
-                      </span>
-                    ) : (
-                      <span style={{ color: '#f59e0b', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#f59e0b' }} />
-                        Offline (Local-only mode)
-                      </span>
-                    )}
+                    <span style={{ color: 'var(--credit)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--credit)' }} />
+                      Online & Connected
+                    </span>
                   </div>
-                  {isFirebaseConnected && (
-                    <>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
-                        <span style={{ color: 'var(--text-secondary)' }}>Last Cloud Sync:</span>
-                        <span style={{ fontWeight: 600 }}>{lastSyncTime}</span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
-                        <span style={{ color: 'var(--text-secondary)' }}>Sync Buffer Status:</span>
-                        <span style={{ color: 'var(--credit)', fontWeight: 600 }}>0 Pending Changes</span>
-                      </div>
-                    </>
-                  )}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>Last Cloud Sync:</span>
+                    <span style={{ fontWeight: 600 }}>{lastSyncTime}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>Sync Buffer Status:</span>
+                    <span style={{ color: 'var(--credit)', fontWeight: 600 }}>0 Pending Changes</span>
+                  </div>
                 </div>
 
-                {isFirebaseConnected ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    <button 
-                      id="btn-force-sync"
-                      className="btn btn-primary"
-                      onClick={() => {
-                        setSyncState('syncing');
-                        setTimeout(() => {
-                          setSyncState('synced');
-                          setLastSyncTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
-                          showToast("Cloud Synced", "All records successfully backed up to cloud database.", "info");
-                        }, 800);
-                      }}
-                      disabled={syncState === 'syncing'}
-                    >
-                      <RefreshCw size={16} className={syncState === 'syncing' ? 'syncing' : ''} />
-                      {syncState === 'syncing' ? 'Syncing accounts...' : 'Force Cloud Sync Now'}
-                    </button>
-                    
-                    <button 
-                      className="btn btn-outline"
-                      onClick={handleMigrateData}
-                      disabled={isMigrating}
-                    >
-                      <Upload size={16} />
-                      {isMigrating ? "Migrating local data..." : "Upload Local Data to Cloud"}
-                    </button>
-                  </div>
-                ) : (
-                  <div style={{ padding: '12px', backgroundColor: 'rgba(245, 158, 11, 0.08)', border: '1px dashed #f59e0b', borderRadius: '8px', fontSize: '13px', color: '#d97706' }}>
-                    <strong>Note:</strong> Connect to Firestore to enable real-time cloud sync and backup. See the settings form on this page to configure.
-                  </div>
-                )}
-              </div>
-            </div>
-
-
-
-            {/* Firebase Configuration Panel */}
-            <div className="panel">
-              <div className="panel-header">
-                <span className="panel-title">
-                  <Database size={20} /> Firestore Connection Settings
-                </span>
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <p style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>
-                  Configure your Firebase project credentials to sync data with Firestore. These can be configured in a <code>.env</code> file or pasted below.
-                </p>
-
-                <form onSubmit={handleSaveFirebaseConfig} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>Project ID *</label>
-                    <input 
-                      type="text" 
-                      className="form-control"
-                      value={firebaseConfigForm.projectId}
-                      onChange={(e) => setFirebaseConfigForm({ ...firebaseConfigForm, projectId: e.target.value })}
-                      placeholder="e.g. farm-ledger-1234"
-                      required
-                    />
-                  </div>
-                  <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>API Key *</label>
-                    <input 
-                      type="password" 
-                      className="form-control"
-                      value={firebaseConfigForm.apiKey}
-                      onChange={(e) => setFirebaseConfigForm({ ...firebaseConfigForm, apiKey: e.target.value })}
-                      placeholder="AIzaSy..."
-                      required
-                    />
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                    <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                      <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>Auth Domain</label>
-                      <input 
-                        type="text" 
-                        className="form-control"
-                        value={firebaseConfigForm.authDomain}
-                        onChange={(e) => setFirebaseConfigForm({ ...firebaseConfigForm, authDomain: e.target.value })}
-                        placeholder="project.firebaseapp.com"
-                      />
-                    </div>
-                    <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                      <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>App ID</label>
-                      <input 
-                        type="text" 
-                        className="form-control"
-                        value={firebaseConfigForm.appId}
-                        onChange={(e) => setFirebaseConfigForm({ ...firebaseConfigForm, appId: e.target.value })}
-                        placeholder="1:1234:web:abcd"
-                      />
-                    </div>
-                  </div>
-                  
-                  <div style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
-                    <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>
-                      Save & Connect Firestore
-                    </button>
-                    {isFirebaseConnected && (
-                      <button 
-                        type="button" 
-                        className="btn btn-outline" 
-                        onClick={handleClearFirebaseConfig}
-                        style={{ borderColor: 'var(--debit)', color: 'var(--debit)' }}
-                      >
-                        Disconnect
-                      </button>
-                    )}
-                  </div>
-                </form>
+                <button 
+                  id="btn-force-sync"
+                  className="btn btn-primary"
+                  onClick={triggerCloudSync}
+                  disabled={syncState === 'syncing'}
+                >
+                  <RefreshCw size={16} className={syncState === 'syncing' ? 'syncing' : ''} />
+                  {syncState === 'syncing' ? 'Syncing accounts...' : 'Force Cloud Sync Now'}
+                </button>
               </div>
             </div>
 
