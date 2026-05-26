@@ -339,6 +339,7 @@ export default function App() {
   const [lastSyncTime, setLastSyncTime] = useState<string>("Just now");
   const [showClearModal, setShowClearModal] = useState<boolean>(false);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+  const [isPdfExportingNotes, setIsPdfExportingNotes] = useState<boolean>(false);
 
   // --- Reports Config State ---
   const [reportType, setReportType] = useState<'daily' | 'monthly' | 'form-wise'>('daily');
@@ -494,6 +495,11 @@ export default function App() {
       return matchesSearch && matchesDate;
     }).sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
   }, [notes, noteSearchQuery, noteDateFilter]);
+
+  // All notes sorted by date (for PDF export of complete history)
+  const allNotesSorted = useMemo(() => {
+    return [...notes].sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
+  }, [notes]);
 
   // Attendance Calculations
   const datesInSelectedMonth = useMemo(() => {
@@ -859,18 +865,24 @@ export default function App() {
     }, 150);
   };
 
-  // Direct PDF Download for Notes
+  // Direct PDF Download for Notes — exports ALL notes ignoring filters
   const handleDownloadNotesPDF = async () => {
-    const element = document.getElementById('notes-history-panel');
-    if (!element) {
-      showToast("PDF Error", "Notes element not found.", "error");
-      return;
-    }
+    showToast("Generating PDF", "Preparing your Notes PDF with all entries...", "info");
 
-    showToast("Generating PDF", "Preparing your Notes PDF...", "info");
+    // Show all notes without scroll constraints
+    setIsPdfExportingNotes(true);
     document.body.classList.add('pdf-exporting');
 
+    // Wait for React to re-render with all notes visible
     setTimeout(async () => {
+      const element = document.getElementById('notes-history-panel');
+      if (!element) {
+        showToast("PDF Error", "Notes element not found.", "error");
+        setIsPdfExportingNotes(false);
+        document.body.classList.remove('pdf-exporting');
+        return;
+      }
+
       try {
         const canvas = await html2canvas(element, {
           scale: 2,
@@ -900,14 +912,15 @@ export default function App() {
 
         const fileName = `Farm_Notes_${new Date().toISOString().split('T')[0]}.pdf`;
         pdf.save(fileName);
-        showToast("PDF Downloaded", "Notes PDF downloaded successfully.", "success");
+        showToast("PDF Downloaded", `Notes PDF with ${allNotesSorted.length} entries downloaded successfully.`, "success");
       } catch (err) {
         console.error("PDF generation failed:", err);
         showToast("PDF Export Failed", "Failed to generate Notes PDF.", "error");
       } finally {
+        setIsPdfExportingNotes(false);
         document.body.classList.remove('pdf-exporting');
       }
-    }, 150);
+    }, 300);
   };
 
   // Direct PDF Download for Attendance
@@ -2239,7 +2252,10 @@ export default function App() {
                     <div>
                       <span className="panel-title">Notes History Logs</span>
                       <span style={{ fontSize: '13px', color: 'var(--text-secondary)', marginLeft: '10px' }}>
-                        Total {filteredNotes.length} notes found
+                        {isPdfExportingNotes 
+                          ? `Complete History — ${allNotesSorted.length} notes`
+                          : `Total ${filteredNotes.length} notes found`
+                        }
                       </span>
                     </div>
                     <button 
@@ -2251,62 +2267,67 @@ export default function App() {
                     </button>
                   </div>
 
-                  {filteredNotes.length === 0 ? (
-                    <div className="empty-state">
-                      <FileText className="empty-state-icon" />
-                      <h3>No Notes Found</h3>
-                      <p>Start recording daily logs or clear active search filters.</p>
-                    </div>
-                  ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxHeight: '550px', overflowY: 'auto', paddingRight: '4px' }}>
-                      {filteredNotes.map((note) => (
-                        <div 
-                          key={note.id}
-                          style={{
-                            padding: '16px',
-                            border: '1px solid var(--border-color)',
-                            borderRadius: 'var(--radius-md)',
-                            backgroundColor: 'var(--bg-primary)',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: '10px',
-                            position: 'relative'
-                          }}
-                        >
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                            <span className="badge badge-category" style={{ fontSize: '11px' }}>
-                              <Calendar size={11} style={{ marginRight: '4px' }} />
-                               {formatDateToDisplay(note.date)}
-                            </span>
-                            <div style={{ display: 'flex', gap: '6px' }} className="no-print">
-                              <button 
-                                className="btn btn-outline btn-sm"
-                                style={{ padding: '2px 6px', fontSize: '11px' }}
-                                onClick={() => handleEditNoteStart(note)}
-                              >
-                                Edit
-                              </button>
-                              <button 
-                                className="btn btn-danger btn-sm"
-                                style={{ padding: '2px 6px', fontSize: '11px' }}
-                                onClick={() => handleDeleteNote(note.id)}
-                              >
-                                <Trash2 size={11} />
-                              </button>
+                  {(() => {
+                    const notesToShow = isPdfExportingNotes ? allNotesSorted : filteredNotes;
+                    return notesToShow.length === 0 ? (
+                      <div className="empty-state">
+                        <FileText className="empty-state-icon" />
+                        <h3>No Notes Found</h3>
+                        <p>Start recording daily logs or clear active search filters.</p>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', ...(isPdfExportingNotes ? {} : { maxHeight: '550px', overflowY: 'auto' as const }), paddingRight: '4px' }}>
+                        {notesToShow.map((note) => (
+                          <div 
+                            key={note.id}
+                            style={{
+                              padding: '16px',
+                              border: '1px solid var(--border-color)',
+                              borderRadius: 'var(--radius-md)',
+                              backgroundColor: 'var(--bg-primary)',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '10px',
+                              position: 'relative'
+                            }}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                              <span className="badge badge-category" style={{ fontSize: '11px' }}>
+                                <Calendar size={11} style={{ marginRight: '4px' }} />
+                                 {formatDateToDisplay(note.date)}
+                              </span>
+                              {!isPdfExportingNotes && (
+                                <div style={{ display: 'flex', gap: '6px' }} className="no-print">
+                                  <button 
+                                    className="btn btn-outline btn-sm"
+                                    style={{ padding: '2px 6px', fontSize: '11px' }}
+                                    onClick={() => handleEditNoteStart(note)}
+                                  >
+                                    Edit
+                                  </button>
+                                  <button 
+                                    className="btn btn-danger btn-sm"
+                                    style={{ padding: '2px 6px', fontSize: '11px' }}
+                                    onClick={() => handleDeleteNote(note.id)}
+                                  >
+                                    <Trash2 size={11} />
+                                  </button>
+                                </div>
+                              )}
                             </div>
+
+                            <h3 style={{ fontSize: '15px', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
+                              {note.title}
+                            </h3>
+
+                            <p style={{ fontSize: '13px', color: 'var(--text-secondary)', whiteSpace: 'pre-wrap', margin: 0, lineHeight: '1.5' }}>
+                              {note.content}
+                            </p>
                           </div>
-
-                          <h3 style={{ fontSize: '15px', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
-                            {note.title}
-                          </h3>
-
-                          <p style={{ fontSize: '13px', color: 'var(--text-secondary)', whiteSpace: 'pre-wrap', margin: 0, lineHeight: '1.5' }}>
-                            {note.content}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </div>
 
               </div>
